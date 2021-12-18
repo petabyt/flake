@@ -128,7 +128,7 @@ int runTarget(char name[]) {
 		}
 	}
 
-	puts("No rule to make target.");
+	printf("No rule to make target %s\n", name);
 	return 1;
 
 	found:;
@@ -144,6 +144,8 @@ int runTarget(char name[]) {
 		puts("Makefiles have tabs. Sorry.");
 		return 1;
 	}
+
+	// TODO: processCommand processes \t, ' ', @, -, etc
 	
 	while (buf[c] == '\t') {
 		c++;
@@ -153,10 +155,14 @@ int runTarget(char name[]) {
 			c++; i++;
 		}
 
+		c++;
+
 		buffer[i] = '\0';
+
+		char *processed = processString(buffer, NULL);
 		
-		puts(buffer);
-		system(buffer);
+		puts(processed);
+		system(processed);
 	}
 }
 

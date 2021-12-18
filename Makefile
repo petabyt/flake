@@ -1,5 +1,5 @@
-x=2
-$(info 1 $(x) 3)
+CC=tcc
 
 all:
-	echo Hello, World
+	sleep 1
+	$(CC) -run main.c
