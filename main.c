@@ -2,13 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_MACRO 1000
-
 // Holds a temporary buffer for string expanding
 char *buffer = NULL;
 
 char *nothing = "";
 
+#define MAX_MACRO 1000
 struct Macros {
 	char *name;
 	char *value;
@@ -20,11 +19,12 @@ struct Macros {
 };
 int macroLen = 0;
 
+#define MAX_TARGET 100
 struct Targets {
 	char *name;
 	char *buf;
 	int pos;
-}targets[1000];
+}targets[MAX_TARGET];
 int targetLen = 0;
 
 // Assumes all parameters are allocated
@@ -50,6 +50,10 @@ char *getMacro(char name[]) {
 	}
 
 	return nothing;
+}
+
+int validChar(char c) {
+	return (c != ':' && c != '=' && c != '\0' && c != '\n' && c != ' ');
 }
 
 // Use processed to tell whether all macros in string
@@ -166,10 +170,6 @@ int runTarget(char name[]) {
 	}
 }
 
-int validChar(char c) {
-	return (c != ':' && c != '=' && c != '\0' && c != '\n');
-}
-
 // Allocate end of line value, `asd = value`
 char *allocEnd(char buf[], int c) {
 	int len = 0;
@@ -212,7 +212,7 @@ int processFile(char buf[]) {
 				value[valueC] = buf[c];
 				valueC++; c++;
 				if (valueC > (int)sizeof(value)) {
-					puts("value excedded size");
+					puts("value exceeded size");
 					return 1;
 				}
 			}
@@ -278,11 +278,39 @@ void openFile(char file[]) {
 	fclose(fp);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
 	// Allocate 10k for loading strings and expansion
 	buffer = malloc(1024 * 10);
 
-	openFile("Makefile");
-	runTarget("all");
+	char *file = "Makefile";
+
+	for (int i = 1; i < argc; i++) {
+		if (argv[i][0] == '-') {
+			switch (argv[i][1]) {
+			case 'f':
+				i++;
+				file = argv[i];
+				break;
+			case 'v':
+				puts("Flake, GPL3.0, Daniel C");
+				return 0;
+			}
+		}
+	}
+
+	openFile(file);
+
+	for (int i = 1; i < argc; i++) {
+		if (argv[i][0] == '-') {
+			i++;
+		} else {
+			if (targetLen == 0) {
+				puts("No target to run.");
+			} else {
+				runTarget(targets[0].name);
+			}
+		}
+	}
+
 	return 0;
 }
