@@ -3,6 +3,7 @@
 #include <string.h>
 
 // Holds a temporary buffer for string expanding
+#define BUFFER_SIZE 10 * 1024
 char *buffer = NULL;
 
 char *nothing = "";
@@ -53,7 +54,7 @@ char *getMacro(char name[]) {
 }
 
 int validChar(char c) {
-	return (c != ':' && c != '=' && c != '\0' && c != '\n' && c != ' ');
+	return (c != ':' && c != '=' && c != '\0' && c != '\n');
 }
 
 // Use processed to tell whether all macros in string
@@ -191,7 +192,7 @@ int skipToEnd(char buf[], int c) {
 		c++;
 	}
 
-	return c + 1;
+	return c;
 }
 
 void openFile(char file[]);
@@ -200,24 +201,30 @@ int processFile(char buf[]) {
 	int line = 0;
 	int c = 0;
 
-	// loop all
+	// loop file
 	while (1) {
 		// loop line
 		while (1) {
-			char value[1000];
-			int valueC = 0;
+			// Read into buffer set up when program started
+			int b = 0;
 
-			// Parse first token, `cc = gcc`, `asd:`
+			// Parse first token, like CC in `CC=gcc`
 			while (validChar(buf[c])) {
-				value[valueC] = buf[c];
-				valueC++; c++;
-				if (valueC > (int)sizeof(value)) {
+				buffer[b] = buf[c];
+				b++; c++;
+				if (b > BUFFER_SIZE) {
 					puts("value exceeded size");
 					return 1;
 				}
 			}
 
-			value[valueC] = '\0';
+			// Skip spacers after token, like in
+			// `a = hi`. Don't want "a " as variable name.
+			while (buffer[b - 1] == ' ') {
+				b--;
+			}
+
+			buffer[b] = '\0';
 
 			// Skip spacers, `cc := gcc`
 			while (buf[c] == '\t' || buf[c] == ' ') {
@@ -226,15 +233,15 @@ int processFile(char buf[]) {
 
 			if (buf[c] == '=') {
 				c++;
-				char *name = malloc(strlen(value));
-				strcpy(name, value);
+				char *name = malloc(strlen(buffer));
+				strcpy(name, buffer);
 				addMacro(name, allocEnd(buf, c));
 
 				c = skipToEnd(buf, c);
 			} else if (buf[c] == ':') {
 				c++;
-				char *name = malloc(strlen(value));
-				strcpy(name, value);
+				char *name = malloc(strlen(buffer));
+				strcpy(name, buffer);
 				addTarget(buf, c, name);
 				
 				c = skipToEnd(buf, c);
@@ -245,7 +252,7 @@ int processFile(char buf[]) {
 
 			// Process statement lines
 			if (buf[c] == '\n' || buf[c] == '\0') {
-				processString(value, NULL);
+				processString(buffer, NULL);
 			}
 
 			if (buf[c] == '\n') {
@@ -280,7 +287,7 @@ void openFile(char file[]) {
 
 int main(int argc, char *argv[]) {
 	// Allocate 10k for loading strings and expansion
-	buffer = malloc(1024 * 10);
+	buffer = malloc(BUFFER_SIZE);
 
 	char *file = "Makefile";
 
@@ -300,6 +307,7 @@ int main(int argc, char *argv[]) {
 
 	openFile(file);
 
+	int noTarget = 1;
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] == '-') {
 			i++;
@@ -307,9 +315,14 @@ int main(int argc, char *argv[]) {
 			if (targetLen == 0) {
 				puts("No target to run.");
 			} else {
-				runTarget(targets[0].name);
+				noTarget = 0;
+				runTarget(argv[i]);
 			}
 		}
+	}
+
+	if (noTarget) {
+		runTarget(targets[0].name);
 	}
 
 	return 0;
