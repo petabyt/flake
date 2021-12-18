@@ -53,14 +53,46 @@ char *getMacro(char name[]) {
 	return nothing;
 }
 
+// All valid characters for a macro name
 int validChar(char c) {
 	return (c != ':' && c != '=' && c != '\0' && c != '\n');
 }
 
+// run a command, with '@', '-', flags
+int runCommand(char command[]) {
+	int silent = 0;
+	int noerror = 0;
+	while (1) {
+		if (*command == '@') {
+			silent = 1;
+		} else if (*command == '-') {
+			noerror = 1;
+		} else {
+			break;
+		}
+
+		command++;
+	}
+
+	if (!silent) {
+		puts(command);
+	}
+
+	int ret = system(command);
+	if (noerror) {
+		return 0;
+	}
+
+	return ret;
+}
+
 // Use processed to tell whether all macros in string
-// have been implemented.
+// have been implemented. Can be NULL and won't do it
 char *processString(char string[], int *processed) {
-	char *buf = malloc(1024); buf[0] = '\0';
+	// TODO: allocate bigger buffer?
+	char *buf = malloc(1024);
+	buf[0] = '\0';
+
 	if (processed != NULL) {*processed = 1;}
 
 	for (int c = 0; string[c] != '\0'; c++) {
@@ -112,11 +144,13 @@ char *processString(char string[], int *processed) {
 					puts(processString(newString + c2, NULL));
 				} else {
 					// Process regular macro references
+					// TODO: recursive macros $(((TEST)))
 					strcat(buf, getMacro(newString));
 				}
 			}
 		} else {
-			// Add char to buf
+			// Add regular char to buf (convert it to string
+			// in somewhat hacky way)
 			strcat(buf, (char[]){string[c], '\0'});
 		}
 	}
@@ -125,6 +159,8 @@ char *processString(char string[], int *processed) {
 }
 
 int runTarget(char name[]) {
+	// TODO: process %
+	// TODO: process macros in target
 	int i;
 	for (i = 0; i < targetLen; i++) {
 		if (!strcmp(targets[i].name, name)) {
@@ -137,16 +173,19 @@ int runTarget(char name[]) {
 	return 1;
 
 	found:;
+
+	// Skip to start of 
 	char *buf = targets[i].buf;
 	int c = targets[i].pos;
 	while (buf[c] != '\n') {
 		c++;
 	}
 
+	// Jump to supposed indent character
 	c++;
 
 	if (buf[c] == ' ') {
-		puts("Makefiles have tabs. Sorry.");
+		puts("Sorry, but commands after a target can only be indented with tabs.");
 		return 1;
 	}
 
@@ -161,13 +200,9 @@ int runTarget(char name[]) {
 		}
 
 		c++;
-
 		buffer[i] = '\0';
-
 		char *processed = processString(buffer, NULL);
-		
-		puts(processed);
-		system(processed);
+		runCommand(processed);
 	}
 }
 
@@ -195,11 +230,13 @@ int skipToEnd(char buf[], int c) {
 	return c;
 }
 
-void openFile(char file[]);
+int openFile(char file[]);
 
 int processFile(char buf[]) {
 	int line = 0;
 	int c = 0;
+
+	int recipeStarted = 0;
 
 	// loop file
 	while (1) {
@@ -207,6 +244,16 @@ int processFile(char buf[]) {
 		while (1) {
 			// Read into buffer set up when program started
 			int b = 0;
+
+			// Ignore spaces, only used in ifdef
+			while (buf[c] == ' ') {
+				c++;
+			}
+
+			if (buf[c] == '\t' && !recipeStarted) {
+				puts("Makefiles can only use tabs after targets. If you want to indent ifdefs and stuff, you need to use spaces.");
+				return 1;
+			}
 
 			// Parse first token, like CC in `CC=gcc`
 			while (validChar(buf[c])) {
@@ -239,6 +286,8 @@ int processFile(char buf[]) {
 
 				c = skipToEnd(buf, c);
 			} else if (buf[c] == ':') {
+				recipeStarted = 1;
+
 				c++;
 				char *name = malloc(strlen(buffer));
 				strcpy(name, buffer);
@@ -269,7 +318,7 @@ int processFile(char buf[]) {
 	return 0;
 }
 
-void openFile(char file[]) {
+int openFile(char file[]) {
 	FILE *fp = fopen(file, "r");
 
 	fseek(fp, 0, SEEK_END);
@@ -280,9 +329,11 @@ void openFile(char file[]) {
 	fread(buf, size, 1, fp);
 	buf[size - 1] = '\0';
 
-	processFile(buf);
+	int v = processFile(buf);
 
 	fclose(fp);
+
+	return v;
 }
 
 int main(int argc, char *argv[]) {
@@ -305,7 +356,10 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	openFile(file);
+	if (openFile(file)) {
+		puts("Error in flake.");
+		return 1;
+	}
 
 	int noTarget = 1;
 	for (int i = 1; i < argc; i++) {
