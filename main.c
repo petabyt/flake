@@ -2,12 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Holds a temporary buffer for string expanding
-#define BUFFER_SIZE 10 * 1024
-char *buffer = NULL;
+// Maximum value for target names
+#define MAX_TARGET_STRING 1024
+
+// Max value for string expansion
+#define MAX_STRING 10 * 1024
 
 char *nothing = "";
 
+// Hold macro addresses and names
 #define MAX_MACRO 1000
 struct Macros {
 	char *name;
@@ -20,6 +23,7 @@ struct Macros {
 };
 int macroLen = 0;
 
+// Structure to hold targets
 #define MAX_TARGET 100
 struct Targets {
 	char *name;
@@ -88,22 +92,22 @@ int runCommand(char command[]) {
 
 // Use processed to tell whether all macros in string
 // have been implemented. Can be NULL and won't do it
-char *processString(char string[], int *processed) {
+char *processString(char string[]) {
 	// TODO: allocate bigger buffer?
-	char *buf = malloc(1024);
+	char *buf = malloc(MAX_STRING);
 	buf[0] = '\0';
 
-	if (processed != NULL) {*processed = 1;}
+	int processed = 1;
 
 	for (int c = 0; string[c] != '\0'; c++) {
 		if (string[c] == '$') {
-			if (processed != NULL) {*processed = 0;}
+			processed = 0;
 			c++;
 
 			// Basic processing stack. processString will
 			// be called recursively, for nested macros
 			int stack = 1;
-			if (string[c] == '(') {
+			if (string[c] == '(' || string[c] == '{') {
 				c++;
 				int origin = c;
 
@@ -111,9 +115,9 @@ char *processString(char string[], int *processed) {
 				while (string[c] == ' ' || string[c] == '\t') {c++;}
 
 				while (string[c] != '\n') {
-					if (string[c] == '(') {
+					if (string[c] == '('  || string[c] == '{') {
 						stack++;
-					} else if (string[c] == ')') {
+					} else if (string[c] == ')'  || string[c] == '}') {
 						stack--;
 					} else if (string[c] == '\0') {
 						puts("Expected an ending )");
@@ -141,7 +145,7 @@ char *processString(char string[], int *processed) {
 				if (!strncmp(newString, "info", 4)) {
 					c2 += 4;
 					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
-					puts(processString(newString + c2, NULL));
+					puts(processString(newString + c2));
 				} else {
 					// Process regular macro references
 					// TODO: recursive macros $(((TEST)))
@@ -153,6 +157,10 @@ char *processString(char string[], int *processed) {
 			// in somewhat hacky way)
 			strcat(buf, (char[]){string[c], '\0'});
 		}
+	}
+
+	if (!processed) {
+		return processString(buf);
 	}
 
 	return buf;
@@ -174,10 +182,18 @@ int runTarget(char name[]) {
 
 	found:;
 
+
+	char *preq = malloc(MAX_TARGET_STRING);
+	int preqC = 0;
+
 	// Skip to start of 
 	char *buf = targets[i].buf;
 	int c = targets[i].pos;
 	while (buf[c] != '\n') {
+		if (validChar(buf[c]) && buf[c] != ' ') {
+			preq[preqC] = '\0';
+		}
+
 		c++;
 	}
 
@@ -189,8 +205,8 @@ int runTarget(char name[]) {
 		return 1;
 	}
 
-	// TODO: processCommand processes \t, ' ', @, -, etc
-	
+	// Process each command after target
+	char *buffer = malloc(MAX_STRING);
 	while (buf[c] == '\t') {
 		c++;
 		int i = 0;
@@ -201,7 +217,7 @@ int runTarget(char name[]) {
 
 		c++;
 		buffer[i] = '\0';
-		char *processed = processString(buffer, NULL);
+		char *processed = processString(buffer);
 		runCommand(processed);
 	}
 }
@@ -238,11 +254,12 @@ int processFile(char buf[]) {
 
 	int recipeStarted = 0;
 
+	char *buffer = malloc(MAX_STRING);
+
 	// loop file
 	while (1) {
 		// loop line
 		while (1) {
-			// Read into buffer set up when program started
 			int b = 0;
 
 			// Ignore spaces, only used in ifdef
@@ -259,8 +276,8 @@ int processFile(char buf[]) {
 			while (validChar(buf[c])) {
 				buffer[b] = buf[c];
 				b++; c++;
-				if (b > BUFFER_SIZE) {
-					puts("value exceeded size");
+				if (b > MAX_STRING) {
+					puts("Token exceeded MAX_STRING");
 					return 1;
 				}
 			}
@@ -301,7 +318,7 @@ int processFile(char buf[]) {
 
 			// Process statement lines
 			if (buf[c] == '\n' || buf[c] == '\0') {
-				processString(buffer, NULL);
+				processString(buffer);
 			}
 
 			if (buf[c] == '\n') {
@@ -337,9 +354,6 @@ int openFile(char file[]) {
 }
 
 int main(int argc, char *argv[]) {
-	// Allocate 10k for loading strings and expansion
-	buffer = malloc(BUFFER_SIZE);
-
 	char *file = "Makefile";
 
 	for (int i = 1; i < argc; i++) {
