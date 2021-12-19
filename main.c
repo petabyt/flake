@@ -10,6 +10,8 @@
 
 char *nothing = "";
 
+int line = 0;
+
 // Hold macro addresses and names
 #define MAX_MACRO 1000
 struct Macros {
@@ -120,7 +122,7 @@ char *processString(char string[]) {
 					} else if (string[c] == ')'  || string[c] == '}') {
 						stack--;
 					} else if (string[c] == '\0') {
-						puts("Expected an ending )");
+						printf("Error: Expected an ending ')' while parsing '%s'.\n", string);
 						exit(1);
 					}
 
@@ -177,7 +179,7 @@ int runTarget(char name[]) {
 		}
 	}
 
-	printf("No rule to make target %s\n", name);
+	printf("Error: No rule to make target %s\n", name);
 	return 1;
 
 	found:;
@@ -201,7 +203,7 @@ int runTarget(char name[]) {
 	c++;
 
 	if (buf[c] == ' ') {
-		puts("Sorry, but commands after a target can only be indented with tabs.");
+		printf("%s\n", "Error: Commands after a target can only be indented with tabs.");
 		return 1;
 	}
 
@@ -268,7 +270,7 @@ int processFile(char buf[]) {
 			}
 
 			if (buf[c] == '\t' && !recipeStarted) {
-				puts("Makefiles can only use tabs after targets. If you want to indent ifdefs and stuff, you need to use spaces.");
+				puts("Error: Tabs can only be used after targets.");
 				return 1;
 			}
 
@@ -277,7 +279,7 @@ int processFile(char buf[]) {
 				buffer[b] = buf[c];
 				b++; c++;
 				if (b > MAX_STRING) {
-					puts("Token exceeded MAX_STRING");
+					puts("Error: Line exceeded MAX_STRING");
 					return 1;
 				}
 			}
@@ -364,14 +366,13 @@ int main(int argc, char *argv[]) {
 				file = argv[i];
 				break;
 			case 'v':
-				puts("Flake, GPL3.0, Daniel C");
+				puts("Flake - GPL3.0 - Daniel C");
 				return 0;
 			}
 		}
 	}
 
 	if (openFile(file)) {
-		puts("Error in flake.");
 		return 1;
 	}
 
@@ -381,7 +382,7 @@ int main(int argc, char *argv[]) {
 			i++;
 		} else {
 			if (targetLen == 0) {
-				puts("No target to run.");
+				puts("Error: No target to run.");
 			} else {
 				noTarget = 0;
 				runTarget(argv[i]);
