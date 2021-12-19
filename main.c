@@ -231,7 +231,7 @@ char *allocEnd(char buf[], int c) {
 		len++;
 	}
 
-	// TOOD: handle backslash
+	// TODO: handle backslash
 
 	char *s = malloc(len);
 	memcpy(s, buf + c, len);
@@ -253,84 +253,78 @@ int openFile(char file[]);
 int processFile(char buf[]) {
 	int line = 0;
 	int c = 0;
-
 	int recipeStarted = 0;
 
+	// Loop each line
 	char *buffer = malloc(MAX_STRING);
-
-	// loop file
 	while (1) {
-		// loop line
-		while (1) {
-			int b = 0;
+		int b = 0;
 
-			// Ignore spaces, only used in ifdef
-			while (buf[c] == ' ') {
-				c++;
-			}
+		// Ignore spaces, only used in ifdef
+		while (buf[c] == ' ') {
+			c++;
+		}
 
-			if (buf[c] == '\t' && !recipeStarted) {
-				puts("Error: Tabs can only be used after targets.");
+		if (buf[c] == '\t' && !recipeStarted) {
+			puts("Error: Tabs can only be used after targets.");
+			return 1;
+		}
+
+		// Parse first token, like CC in `CC=gcc`
+		while (validChar(buf[c])) {
+			buffer[b] = buf[c];
+			b++; c++;
+			if (b > MAX_STRING) {
+				puts("Error: Line exceeded MAX_STRING");
 				return 1;
 			}
+		}
 
-			// Parse first token, like CC in `CC=gcc`
-			while (validChar(buf[c])) {
-				buffer[b] = buf[c];
-				b++; c++;
-				if (b > MAX_STRING) {
-					puts("Error: Line exceeded MAX_STRING");
-					return 1;
-				}
-			}
+		// Skip spacers after token, like in
+		// `a = hi`. Don't want "a " as variable name.
+		while (buffer[b - 1] == ' ') {
+			b--;
+		}
 
-			// Skip spacers after token, like in
-			// `a = hi`. Don't want "a " as variable name.
-			while (buffer[b - 1] == ' ') {
-				b--;
-			}
+		buffer[b] = '\0';
 
-			buffer[b] = '\0';
+		// Skip spacers, `cc := gcc`
+		while (buf[c] == '\t' || buf[c] == ' ') {
+			c++;
+		}
 
-			// Skip spacers, `cc := gcc`
-			while (buf[c] == '\t' || buf[c] == ' ') {
-				c++;
-			}
+		if (buf[c] == '=') {
+			c++;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+			addMacro(name, allocEnd(buf, c));
 
-			if (buf[c] == '=') {
-				c++;
-				char *name = malloc(strlen(buffer));
-				strcpy(name, buffer);
-				addMacro(name, allocEnd(buf, c));
+			c = skipToEnd(buf, c);
+		} else if (buf[c] == ':') {
+			recipeStarted = 1;
 
+			c++;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+			addTarget(buf, c, name);
+			
+			c = skipToEnd(buf, c);
+			while (buf[c] == '\t') {
 				c = skipToEnd(buf, c);
-			} else if (buf[c] == ':') {
-				recipeStarted = 1;
-
-				c++;
-				char *name = malloc(strlen(buffer));
-				strcpy(name, buffer);
-				addTarget(buf, c, name);
-				
-				c = skipToEnd(buf, c);
-				while (buf[c] == '\t') {
-					c = skipToEnd(buf, c);
-				}
 			}
+		}
 
-			// Process statement lines
-			if (buf[c] == '\n' || buf[c] == '\0') {
-				processString(buffer);
-			}
+		// Process statement lines
+		if (buf[c] == '\n' || buf[c] == '\0') {
+			processString(buffer);
+		}
 
-			if (buf[c] == '\n') {
-				line++; c++;
-				break;
-			}
+		if (buf[c] == '\n') {
+			line++; c++;
+		}
 
-			if (buf[c] == '\0') {
-				return 0;
-			}
+		if (buf[c] == '\0') {
+			return 0;
 		}
 	}
 
