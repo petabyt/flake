@@ -64,34 +64,6 @@ int validChar(char c) {
 	return (c != ':' && c != '=' && c != '\0' && c != '\n');
 }
 
-// run a command, with '@', '-', flags
-int runCommand(char command[]) {
-	int silent = 0;
-	int noerror = 0;
-	while (1) {
-		if (*command == '@') {
-			silent = 1;
-		} else if (*command == '-') {
-			noerror = 1;
-		} else {
-			break;
-		}
-
-		command++;
-	}
-
-	if (!silent) {
-		puts(command);
-	}
-
-	int ret = system(command);
-	if (noerror) {
-		return 0;
-	}
-
-	return ret;
-}
-
 // Use processed to tell whether all macros in string
 // have been implemented. Can be NULL and won't do it
 char *processString(char string[]) {
@@ -139,15 +111,17 @@ char *processString(char string[]) {
 				memcpy(newString, string + origin, len);
 				newString[len] = '\0';
 
-				// TODO: calls to processString must be called
-				// recursively
-
 				// Process some basic functions
+				// TODO: function parser, parameter parser
 				int c2 = 0;
 				if (!strncmp(newString, "info", 4)) {
 					c2 += 4;
 					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
 					puts(processString(newString + c2));
+				} else if (!strncmp(newString, "shell", 4)) {
+					c2 += 4;
+					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
+					system(processString(newString + c2));
 				} else {
 					// Process regular macro references
 					// TODO: recursive macros $(((TEST)))
@@ -168,6 +142,36 @@ char *processString(char string[]) {
 	return buf;
 }
 
+// run a command, with '@', '-', flags
+int runCommand(char command[]) {
+	int silent = 0;
+	int noerror = 0;
+	while (1) {
+		if (*command == '@') {
+			silent = 1;
+		} else if (*command == '-') {
+			noerror = 1;
+		} else {
+			break;
+		}
+
+		command++;
+	}
+
+	char *process = processString(command);
+
+	if (!silent) {
+		puts(process);
+	}
+
+	int ret = system(process);
+	if (noerror) {
+		return 0;
+	}
+
+	return ret;
+}
+
 int runTarget(char name[]) {
 	// TODO: process %
 	// TODO: process macros in target
@@ -184,19 +188,37 @@ int runTarget(char name[]) {
 
 	found:;
 
-
-	char *preq = malloc(MAX_TARGET_STRING);
-	int preqC = 0;
-
-	// Skip to start of 
+	// Go back to where processFile left off
 	char *buf = targets[i].buf;
 	int c = targets[i].pos;
+
+	while (buf[c] == ' ') {c++;}
+
+	// Scan through prerequisities first
+	// temporary, entire thing should be processed as macro
+	char *preq = malloc(MAX_TARGET_STRING);
+	int preqC = 0;
 	while (buf[c] != '\n') {
-		if (validChar(buf[c]) && buf[c] != ' ') {
-			preq[preqC] = '\0';
+		if (validChar(buf[c])) {
+			if (buf[c] == ' ') {
+				// Process the target between spaces
+				preq[preqC] = '\0'; preqC = 0;
+				printf("%s\n", preq);
+				runTarget(preq);
+				while (buf[c] == ' ') {c++;}
+			} else {
+				preq[preqC] = buf[c];
+				preqC++;
+			}
 		}
 
 		c++;
+	}
+
+	// Run last target if found, since the loop cut it off
+	preq[preqC] = '\0';
+	if (preqC != 0) {
+		runTarget(preq);
 	}
 
 	// Jump to supposed indent character
@@ -297,7 +319,7 @@ int processFile(char buf[]) {
 			c++;
 			char *name = malloc(strlen(buffer));
 			strcpy(name, buffer);
-			addMacro(name, allocEnd(buf, c));
+			addMacro(name, processString(allocEnd(buf, c)));
 
 			c = skipToEnd(buf, c);
 		} else if (buf[c] == ':') {
