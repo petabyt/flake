@@ -35,6 +35,7 @@ struct Targets {
 int targetLen = 0;
 
 // Assumes all parameters are allocated
+// TODO: detect if already exist
 void addMacro(char name[], char value[]) {
 	macros[macroLen].name = name;
 	macros[macroLen].value = value;
@@ -61,7 +62,7 @@ char *getMacro(char name[]) {
 
 // All valid characters for a macro name
 int validChar(char c) {
-	return (c != ':' && c != '=' && c != '\0' && c != '\n');
+	return (c != '?' && c != ':' && c != '=' && c != '\0' && c != '\n');
 }
 
 // Use processed to tell whether all macros in string
@@ -88,6 +89,7 @@ char *processString(char string[]) {
 				// Skip space before stuff $( info asd)
 				while (string[c] == ' ' || string[c] == '\t') {c++;}
 
+				// Check to make sure no excess (){}
 				while (string[c] != '\n') {
 					if (string[c] == '('  || string[c] == '{') {
 						stack++;
@@ -119,9 +121,25 @@ char *processString(char string[]) {
 					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
 					puts(processString(newString + c2));
 				} else if (!strncmp(newString, "shell", 4)) {
-					c2 += 4;
+					c2 += 5;
 					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
-					system(processString(newString + c2));
+					FILE *cmd = popen(processString(newString + c2), "r");
+
+					char *read = malloc(MAX_STRING);
+					fread(read, 1, MAX_STRING, cmd);
+					fclose(cmd);
+
+					// GNU make seems to replace \n with spaces, hold off for now
+					for (int i = 0; read[i] != '\0'; i++) {
+						if (read[i] == '\n') {
+							read[i] = ' ';
+							if (read[i + 1] == '\0') {
+								read[i] = '\0';
+							}
+						}
+					}
+
+					strcat(buf, read);
 				} else {
 					// Process regular macro references
 					// TODO: recursive macros $(((TEST)))
@@ -248,6 +266,11 @@ int runTarget(char name[]) {
 
 // Allocate end of line value, `asd = value`
 char *allocEnd(char buf[], int c) {
+	// GNU Make likes to remove first tabs and spaces
+	while (buf[c] == ' ' || buf[c] == '\t') {
+		c++;
+	}
+
 	int len = 0;
 	while ((buf + c)[len] != '\n') {
 		len++;
@@ -317,10 +340,28 @@ int processFile(char buf[]) {
 
 		if (buf[c] == '=') {
 			c++;
+
 			char *name = malloc(strlen(buffer));
 			strcpy(name, buffer);
 			addMacro(name, processString(allocEnd(buf, c)));
 
+			c = skipToEnd(buf, c);
+		} else if (buf[c] == '?') {			
+			c += 2;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+
+			if (getMacro(name) == nothing) {
+				addMacro(name, allocEnd(buf, c));
+			}
+
+			c = skipToEnd(buf, c); 
+		} else if (buf[c] == ':' && buf[c + 1] == '=') {
+			c += 2;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+
+			addMacro(name, allocEnd(buf, c));
 			c = skipToEnd(buf, c);
 		} else if (buf[c] == ':') {
 			recipeStarted = 1;
