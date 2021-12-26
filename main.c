@@ -2,12 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Holds a temporary buffer for string expanding
-#define BUFFER_SIZE 10 * 1024
-char *buffer = NULL;
+// Maximum value for target names
+#define MAX_TARGET_STRING 1024
+
+// Max value for string expansion
+#define MAX_STRING 10 * 1024
 
 char *nothing = "";
+int line = 0;
 
+// Hold macro addresses and names
 #define MAX_MACRO 1000
 struct Macros {
 	char *name;
@@ -18,8 +22,9 @@ struct Macros {
 }macros[MAX_MACRO] = {
 	{"IS_FLAKE", "0.1.0"}
 };
-int macroLen = 0;
+int macroLen = 1;
 
+// Structure to hold targets
 #define MAX_TARGET 100
 struct Targets {
 	char *name;
@@ -29,6 +34,7 @@ struct Targets {
 int targetLen = 0;
 
 // Assumes all parameters are allocated
+// TODO: detect if already exist
 void addMacro(char name[], char value[]) {
 	macros[macroLen].name = name;
 	macros[macroLen].value = value;
@@ -53,38 +59,68 @@ char *getMacro(char name[]) {
 	return nothing;
 }
 
+// All valid characters for a macro name
 int validChar(char c) {
-	return (c != ':' && c != '=' && c != '\0' && c != '\n');
+	return (c != '?' && c != ':' && c != '=' && c != '\0' && c != '\n');
+}
+
+// Wildcard comparasion
+// Inspired by tutorialspoint
+int wldcmp(char *first, char *second, char cmp) {
+	if (*first == '\0' && *second == '\0') {
+		return 1;
+	}
+
+	if (*first == cmp && *(first + 1) != '\0' && *second == '\0') {
+		return 0;
+	}
+ 
+	// If the first string contains '?', or current characters
+	// of both strings match
+	if (*first == '?' || *first == *second) {
+		return wldcmp(first + 1, second + 1, cmp);
+	}
+ 
+	if (*first == cmp) {
+		return wldcmp(first + 1, second, cmp) || wldcmp(first, second + 1, cmp);
+	}
+
+	return 0;
 }
 
 // Use processed to tell whether all macros in string
-// have been implemented.
-char *processString(char string[], int *processed) {
-	char *buf = malloc(1024); buf[0] = '\0';
-	if (processed != NULL) {*processed = 1;}
+// have been implemented. Can be NULL and won't do it
+char *processString(char string[]) {
+	// TODO: allocate bigger buffer?
+	char *buf = malloc(MAX_STRING);
+	buf[0] = '\0';
+
+	int processed = 1;
 
 	for (int c = 0; string[c] != '\0'; c++) {
 		if (string[c] == '$') {
-			if (processed != NULL) {*processed = 0;}
 			c++;
 
 			// Basic processing stack. processString will
 			// be called recursively, for nested macros
 			int stack = 1;
-			if (string[c] == '(') {
+			if (string[c] == '(' || string[c] == '{') {
+				processed = 0;
+
 				c++;
 				int origin = c;
 
 				// Skip space before stuff $( info asd)
 				while (string[c] == ' ' || string[c] == '\t') {c++;}
 
+				// Check to make sure no excess (){}
 				while (string[c] != '\n') {
-					if (string[c] == '(') {
+					if (string[c] == '('  || string[c] == '{') {
 						stack++;
-					} else if (string[c] == ')') {
+					} else if (string[c] == ')'  || string[c] == '}') {
 						stack--;
 					} else if (string[c] == '\0') {
-						puts("Expected an ending )");
+						printf("Error: Expected an ending ')' while parsing '%s'.\n", string);
 						exit(1);
 					}
 
@@ -101,30 +137,87 @@ char *processString(char string[], int *processed) {
 				memcpy(newString, string + origin, len);
 				newString[len] = '\0';
 
-				// TODO: calls to processString must be called
-				// recursively
-
 				// Process some basic functions
+				// TODO: function parser, parameter parser
 				int c2 = 0;
 				if (!strncmp(newString, "info", 4)) {
 					c2 += 4;
 					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
-					puts(processString(newString + c2, NULL));
+					puts(processString(newString + c2));
+				} else if (!strncmp(newString, "shell", 4)) {
+					c2 += 5;
+					while (newString[c2] == ' ' || newString[c2] == '\t') {c2++;}
+					FILE *cmd = popen(processString(newString + c2), "r");
+
+					char *read = malloc(MAX_STRING);
+					fread(read, 1, MAX_STRING, cmd);
+					fclose(cmd);
+
+					// GNU make seems to replace \n with spaces, hold off for now
+					for (int i = 0; read[i] != '\0'; i++) {
+						if (read[i] == '\n') {
+							read[i] = ' ';
+							if (read[i + 1] == '\0') {
+								read[i] = '\0';
+							}
+						}
+					}
+
+					strcat(buf, read);
 				} else {
 					// Process regular macro references
+					// TODO: recursive macros $(((TEST)))
 					strcat(buf, getMacro(newString));
 				}
 			}
 		} else {
-			// Add char to buf
+			// Add regular char to buf (convert it to string
+			// in somewhat hacky way)
 			strcat(buf, (char[]){string[c], '\0'});
 		}
+	}
+
+	if (!processed) {
+		return processString(buf);
 	}
 
 	return buf;
 }
 
+// run a command, with '@', '-', flags
+int runCommand(char command[]) {
+	int silent = 0;
+	int noerror = 0;
+	while (1) {
+		if (*command == '@') {
+			silent = 1;
+		} else if (*command == '-') {
+			noerror = 1;
+		} else {
+			break;
+		}
+
+		command++;
+	}
+
+	char *process = processString(command);
+
+	if (!silent) {
+		puts(process);
+	}
+
+	int ret = system(process);
+	if (noerror) {
+		return 0;
+	}
+
+	return ret;
+}
+
 int runTarget(char name[]) {
+	// TODO: process %
+	// TODO: process macros in target
+	// TODO: process multiple targets in target name, and multiple prereq
 	int i;
 	for (i = 0; i < targetLen; i++) {
 		if (!strcmp(targets[i].name, name)) {
@@ -133,25 +226,54 @@ int runTarget(char name[]) {
 		}
 	}
 
-	printf("No rule to make target %s\n", name);
+	printf("Error: No rule to make target %s\n", name);
 	return 1;
 
 	found:;
+
+	// Go back to where processFile left off
 	char *buf = targets[i].buf;
 	int c = targets[i].pos;
+
+	while (buf[c] == ' ') {c++;}
+
+	// Scan through prerequisities first
+	// temporary, entire thing should be processed as macro
+	char *preq = malloc(MAX_TARGET_STRING);
+	int preqC = 0;
 	while (buf[c] != '\n') {
+		if (validChar(buf[c])) {
+			if (buf[c] == ' ') {
+				// Process the target between spaces
+				preq[preqC] = '\0'; preqC = 0;
+				printf("%s\n", preq);
+				runTarget(preq);
+				while (buf[c] == ' ') {c++;}
+			} else {
+				preq[preqC] = buf[c];
+				preqC++;
+			}
+		}
+
 		c++;
 	}
 
+	// Run last target if found, since the loop cut it off
+	preq[preqC] = '\0';
+	if (preqC != 0) {
+		runTarget(preq);
+	}
+
+	// Jump to supposed indent character
 	c++;
 
 	if (buf[c] == ' ') {
-		puts("Makefiles have tabs. Sorry.");
+		printf("%s\n", "Error: Commands after a target can only be indented with tabs.");
 		return 1;
 	}
 
-	// TODO: processCommand processes \t, ' ', @, -, etc
-	
+	// Process each command after target
+	char *buffer = malloc(MAX_STRING);
 	while (buf[c] == '\t') {
 		c++;
 		int i = 0;
@@ -161,24 +283,25 @@ int runTarget(char name[]) {
 		}
 
 		c++;
-
 		buffer[i] = '\0';
-
-		char *processed = processString(buffer, NULL);
-		
-		puts(processed);
-		system(processed);
+		char *processed = processString(buffer);
+		runCommand(processed);
 	}
 }
 
 // Allocate end of line value, `asd = value`
 char *allocEnd(char buf[], int c) {
+	// GNU Make likes to remove first tabs and spaces
+	while (buf[c] == ' ' || buf[c] == '\t') {
+		c++;
+	}
+
 	int len = 0;
 	while ((buf + c)[len] != '\n') {
 		len++;
 	}
 
-	// TOOD: handle backslash
+	// TODO: handle backslash
 
 	char *s = malloc(len);
 	memcpy(s, buf + c, len);
@@ -195,81 +318,108 @@ int skipToEnd(char buf[], int c) {
 	return c;
 }
 
-void openFile(char file[]);
+int openFile(char file[]);
 
 int processFile(char buf[]) {
 	int line = 0;
 	int c = 0;
+	int recipeStarted = 0;
 
-	// loop file
+	// Loop each line
+	char *buffer = malloc(MAX_STRING);
 	while (1) {
-		// loop line
-		while (1) {
-			// Read into buffer set up when program started
-			int b = 0;
+		int b = 0;
 
-			// Parse first token, like CC in `CC=gcc`
-			while (validChar(buf[c])) {
-				buffer[b] = buf[c];
-				b++; c++;
-				if (b > BUFFER_SIZE) {
-					puts("value exceeded size");
-					return 1;
-				}
+		// Ignore spaces, only used in ifdef
+		while (buf[c] == ' ') {
+			c++;
+		}
+
+		if (buf[c] == '\t' && !recipeStarted) {
+			puts("Error: Tabs can only be used after targets.");
+			return 1;
+		}
+
+		// Parse first token, like CC in `CC=gcc`
+		while (validChar(buf[c])) {
+			buffer[b] = buf[c];
+			b++; c++;
+			if (b > MAX_STRING) {
+				puts("Error: Line exceeded MAX_STRING");
+				return 1;
 			}
+		}
 
-			// Skip spacers after token, like in
-			// `a = hi`. Don't want "a " as variable name.
-			while (buffer[b - 1] == ' ') {
-				b--;
-			}
+		// Skip spacers after token, like in
+		// `a = hi`. Don't want "a " as variable name.
+		while (buffer[b - 1] == ' ' || buffer[b - 1] == '\t') {
+			b--;
+		}
 
-			buffer[b] = '\0';
+		buffer[b] = '\0';
 
-			// Skip spacers, `cc := gcc`
-			while (buf[c] == '\t' || buf[c] == ' ') {
-				c++;
-			}
+		// Skip spacers
+		while (buf[c] == '\t' || buf[c] == ' ') {
+			c++;
+		}
 
-			if (buf[c] == '=') {
-				c++;
-				char *name = malloc(strlen(buffer));
-				strcpy(name, buffer);
+		if (buf[c] == '=') {
+			c++;
+
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+			addMacro(name, processString(allocEnd(buf, c)));
+
+			c = skipToEnd(buf, c);
+		} else if (buf[c] == '?') {			
+			c += 2;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+
+			if (getMacro(name) == nothing) {
 				addMacro(name, allocEnd(buf, c));
+			}
 
+			c = skipToEnd(buf, c); 
+		} else if (buf[c] == ':' && buf[c + 1] == '=') {
+			c += 2;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+
+			addMacro(name, allocEnd(buf, c));
+			c = skipToEnd(buf, c);
+		} else if (buf[c] == ':') {
+			recipeStarted = 1;
+
+			c++;
+			char *name = malloc(strlen(buffer));
+			strcpy(name, buffer);
+			addTarget(buf, c, name);
+			
+			c = skipToEnd(buf, c);
+			while (buf[c] == '\t') {
 				c = skipToEnd(buf, c);
-			} else if (buf[c] == ':') {
-				c++;
-				char *name = malloc(strlen(buffer));
-				strcpy(name, buffer);
-				addTarget(buf, c, name);
-				
-				c = skipToEnd(buf, c);
-				while (buf[c] == '\t') {
-					c = skipToEnd(buf, c);
-				}
 			}
+		}
 
-			// Process statement lines
-			if (buf[c] == '\n' || buf[c] == '\0') {
-				processString(buffer, NULL);
-			}
+		// Process statement lines
+		if (buf[c] == '\n' || buf[c] == '\0') {
+			processString(buffer);
+		}
 
-			if (buf[c] == '\n') {
-				line++; c++;
-				break;
-			}
+		if (buf[c] == '\n') {
+			line++; c++;
+		}
 
-			if (buf[c] == '\0') {
-				return 0;
-			}
+		if (buf[c] == '\0') {
+			return 0;
 		}
 	}
 
 	return 0;
 }
 
-void openFile(char file[]) {
+int openFile(char file[]) {
 	FILE *fp = fopen(file, "r");
 	if (fp == NULL) {
 		printf("Error: %s doesn't exist.\n", file);
@@ -284,15 +434,14 @@ void openFile(char file[]) {
 	fread(buf, size, 1, fp);
 	buf[size - 1] = '\0';
 
-	processFile(buf);
+	int v = processFile(buf);
 
 	fclose(fp);
+
+	return v;
 }
 
 int main(int argc, char *argv[]) {
-	// Allocate 10k for loading strings and expansion
-	buffer = malloc(BUFFER_SIZE);
-
 	char *file = "Makefile";
 
 	for (int i = 1; i < argc; i++) {
@@ -303,7 +452,7 @@ int main(int argc, char *argv[]) {
 				file = argv[i];
 				break;
 			case 'v':
-				puts("Flake, GPL3.0, Daniel C");
+				puts("Flake - GPL3.0 - Daniel C");
 				return 0;
 			}
 		}
@@ -324,7 +473,9 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	openFile(file);
+	if (openFile(file)) {
+		return 1;
+	}
 
 	int noTarget = 1;
 	for (int i = 1; i < argc; i++) {
@@ -332,9 +483,9 @@ int main(int argc, char *argv[]) {
 			i++;
 		} else if (strchr(argv[i], '=') != NULL) {
 			i++;
-		} else {
+		}  else {
 			if (targetLen == 0) {
-				puts("No target to run.");
+				puts("Error: No target to run.");
 			} else {
 				noTarget = 0;
 				runTarget(argv[i]);
