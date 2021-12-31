@@ -221,9 +221,9 @@ int runCommand(char command[]) {
 }
 
 int runTarget(char name[]) {
-	// TODO: process %
-	// TODO: process macros in target
-	// TODO: process multiple rules in target name, and multiple prereq
+	// TODO: process wildcard target logic
+	// TODO: process spaces between targets
+	// TODO: return bool if target is completed
 	int i;
 	for (i = 0; i < ruleLen; i++) {
 		if (!strcmp(rules[i].name, name)) {
