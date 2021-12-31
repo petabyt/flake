@@ -20,18 +20,25 @@ struct Macros {
 	// line?
 	// type?
 }macros[MAX_MACRO] = {
-	{"IS_FLAKE", "0.1.0"}
+	{"IS_FLAKE", "0.1.0"},
+	{"OS",
+	#ifdef WIN32
+		"Windows"
+	#else
+		"Linux"
+	#endif
+	}
 };
 int macroLen = 1;
 
-// Structure to hold targets
-#define MAX_TARGET 100
-struct Targets {
+// Structure to hold rules
+#define MAX_RULE 100
+struct Rules {
 	char *name;
 	char *buf;
 	int pos;
-}targets[MAX_TARGET];
-int targetLen = 0;
+}rules[MAX_RULE];
+int ruleLen = 0;
 
 // Assumes all parameters are allocated
 // TODO: detect if already exist
@@ -42,11 +49,11 @@ void addMacro(char name[], char value[]) {
 }
 
 // Also assumes parameters are allocated
-void addTarget(char buf[], int pos, char name[]) {
-	targets[targetLen].name = name;
-	targets[targetLen].pos = pos;
-	targets[targetLen].buf = buf;
-	targetLen++;
+void addRule(char buf[], int pos, char name[]) {
+	rules[ruleLen].name = name;
+	rules[ruleLen].pos = pos;
+	rules[ruleLen].buf = buf;
+	ruleLen++;
 }
 
 char *getMacro(char name[]) {
@@ -91,7 +98,6 @@ int wldcmp(char *first, char *second, char cmp) {
 // Use processed to tell whether all macros in string
 // have been implemented. Can be NULL and won't do it
 char *processString(char string[]) {
-	// TODO: allocate bigger buffer?
 	char *buf = malloc(MAX_STRING);
 	buf[0] = '\0';
 
@@ -217,10 +223,10 @@ int runCommand(char command[]) {
 int runTarget(char name[]) {
 	// TODO: process %
 	// TODO: process macros in target
-	// TODO: process multiple targets in target name, and multiple prereq
+	// TODO: process multiple rules in target name, and multiple prereq
 	int i;
-	for (i = 0; i < targetLen; i++) {
-		if (!strcmp(targets[i].name, name)) {
+	for (i = 0; i < ruleLen; i++) {
+		if (!strcmp(rules[i].name, name)) {
 			goto found;
 			return 0;
 		}
@@ -232,8 +238,8 @@ int runTarget(char name[]) {
 	found:;
 
 	// Go back to where processFile left off
-	char *buf = targets[i].buf;
-	int c = targets[i].pos;
+	char *buf = rules[i].buf;
+	int c = rules[i].pos;
 
 	while (buf[c] == ' ') {c++;}
 
@@ -336,7 +342,7 @@ int processFile(char buf[]) {
 		}
 
 		if (buf[c] == '\t' && !recipeStarted) {
-			puts("Error: Tabs can only be used after targets.");
+			puts("Error: Tabs can only be used after rules.");
 			return 1;
 		}
 
@@ -361,6 +367,10 @@ int processFile(char buf[]) {
 		// Skip spacers
 		while (buf[c] == '\t' || buf[c] == ' ') {
 			c++;
+		}
+
+		if (!strcmp(buffer, "ifdef")) {
+			
 		}
 
 		if (buf[c] == '=') {
@@ -394,7 +404,7 @@ int processFile(char buf[]) {
 			c++;
 			char *name = malloc(strlen(buffer));
 			strcpy(name, buffer);
-			addTarget(buf, c, name);
+			addRule(buf, c, name);
 			
 			c = skipToEnd(buf, c);
 			while (buf[c] == '\t') {
@@ -484,7 +494,7 @@ int main(int argc, char *argv[]) {
 		} else if (strchr(argv[i], '=') != NULL) {
 			i++;
 		}  else {
-			if (targetLen == 0) {
+			if (ruleLen == 0) {
 				puts("Error: No target to run.");
 			} else {
 				noTarget = 0;
@@ -494,7 +504,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (noTarget) {
-		runTarget(targets[0].name);
+		runTarget(rules[0].name);
 	}
 
 	return 0;
