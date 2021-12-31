@@ -9,9 +9,12 @@ Probably would have been a better idea to write it in Python
 - Add quality of life upgrades while keeping compatibility with GNU make
 
 ### Implementation:
-- [x] Basic targets
+- [x] Basic rules
+- [ ] basic prerequisities
 - [x] Compile itself
 - [x] Macros
+- [ ] Basic targets
+- [ ] wildcard targets (have `wldCmp`)
 - [ ] Include
 - [ ] Functions
 
