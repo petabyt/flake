@@ -8,8 +8,11 @@ Rewrite of GNU Make with better error handling and Windows support and stuff
 
 ### Implementation:
 - [x] Basic targets
+- [ ] prerequisities
 - [x] Compile itself
 - [x] Macros
+- [ ] Link targets to files and modification dates
+- [ ] wildcard/multifile targets
 - [ ] Include
 - [ ] Functions
 
